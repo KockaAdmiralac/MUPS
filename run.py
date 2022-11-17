@@ -1,34 +1,40 @@
 #!/usr/bin/env python
 from subprocess import Popen, PIPE
-from typing import List
+from typing import Any, Dict, List
 from os import environ as env
+from os.path import dirname, realpath, join
 from sys import exit, stderr
 from matplotlib import pyplot as plt
 import numpy as np
 
 Result = List[List[str]]
 
-ARGS = [
-    [1, 131072, 2],
-    [5, 500000, 10],
-    [1, 65536, 4]
-]
+TESTS = {
+    'prime': {
+        'args': [
+            [1, 131072, 2],
+            [5, 500000, 10],
+            [1, 65536, 4]
+        ],
+        'funcs': 2
+    }
+}
 
-NUM_FUNCS = 2
+THREADS = [1, 2, 4, 8, 16]
+WIDTH = 1.0
 
-THREADS = [1, 2, 4, 8]
+SCRIPT_DIR = dirname(realpath(__file__))
+BUILD_DIR = join(SCRIPT_DIR, 'gen')
 
-WIDTH = 0.9
-
-def test(func_num: int, args: List[int], num_threads: int) -> Result:
+def run_test(func_num: int, exe_name: str, args: List[int], num_threads: int) -> Result:
     process_env = env.copy()
     process_env['OMP_NUM_THREADS'] = str(num_threads)
-    process_args = ['./prime', str(func_num)] + [str(arg) for arg in args]
+    process_args = [f'{BUILD_DIR}/{exe_name}', str(func_num)] + [str(arg) for arg in args]
     process = Popen(process_args, env=process_env, stdout=PIPE)
     if process.wait() != 0 or not process.stdout:
         return []
     results = []
-    log_filename = f'{" ".join(process_args + [str(num_threads)])}.log'
+    log_filename = join(BUILD_DIR, f'{" ".join(process_args + [str(num_threads)])}.log')
     with open(log_filename, 'w', encoding='utf-8') as log_file:
         for line in process.stdout:
             line = line.decode('utf-8')
@@ -48,20 +54,23 @@ def get_y_axis(result: Result, seq_result: Result) -> List[float]:
 def get_x_axis(result: Result) -> List[int]:
     return [int(row[0]) for row in result]
 
-def main():
-    for func_num in range(NUM_FUNCS):
-        for arg_idx, args in enumerate(ARGS):
+def run_tests(test_name: str, test_data: Dict[str, Any]):
+    test_data = TESTS[test_name]
+    num_funcs = test_data['num_funcs'] if 'num_funcs' in test_data else 1
+    args = test_data['args'] if 'args' in test_data else [[]]
+    for func_num in range(num_funcs):
+        for arg_idx, args in enumerate(args):
             seq_results = []
             x_axis = np.array([])
             x_labels = []
             plt.figure(figsize=(15, 6))
             for num_threads in THREADS:
                 if num_threads == 1:
-                    seq_results = test(func_num, args, num_threads)
+                    seq_results = run_test(func_num, test_name, args, num_threads)
                     x_labels = get_x_axis(seq_results)
                     x_axis = np.arange(len(x_labels)) * WIDTH
                 else:
-                    results = test(func_num, args, num_threads)
+                    results = run_test(func_num, test_name, args, num_threads)
                     if len(results) == 0:
                         print('An error occurred while getting results for ', func_num, args, num_threads, file=stderr)
                         exit(1)
@@ -78,7 +87,11 @@ def main():
             plt.ylabel('Speedup')
             plt.xticks(x_axis, x_labels)
             plt.legend()
-            plt.savefig(f'results-{func_num}-{arg_idx}.svg')
+            plt.savefig(join(BUILD_DIR, f'results-{func_num}-{arg_idx}.svg'))
+
+def main():
+    for test_name, test_data in TESTS.items():
+        run_tests(test_name, test_data)
 
 
 if __name__ == '__main__':
