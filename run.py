@@ -3,7 +3,7 @@ from subprocess import Popen, PIPE
 from typing import Any, Dict, List
 from os import environ as env
 from os.path import dirname, realpath, join
-from sys import exit, stderr
+from sys import argv, exit, stderr
 from matplotlib import pyplot as plt
 import numpy as np
 
@@ -16,7 +16,22 @@ TESTS = {
             [5, 500000, 10],
             [1, 65536, 4]
         ],
-        'funcs': 2
+        'funcs': 2,
+        'x': lambda result: [int(row[0]) for row in result],
+        'y': lambda result, seq_result: [float(seq_result[idx][2]) / float(row[2]) for idx, row in enumerate(result)],
+        'same': lambda result1, result2: [int(row[1]) for row in result1] == [int(row[1]) for row in result2]
+    },
+    'feynman': {
+        'args': [[1000], [5000], [10000], [20000]],
+        'funcs': 2,
+        'x': lambda result: [int(result[0][0])],
+        'y': lambda result, seq_result: [float(seq_result[0][2]) / float(result[0][2])],
+        'same': lambda result1, result2: abs(float(result1[0][1]) - float(result2[0][1]))
+    },
+    'moldyn': {
+        'x': lambda result: [int(result[-1][0])],
+        'y': lambda result, seq_result: [float(seq_result[-1][1]) / float(result[-1][0])],
+        'same': lambda result1, result2: [float(row[1]) for row in result1[:-1]] == [float(row[1]) for row in result2[:-1]]
     }
 }
 
@@ -43,28 +58,22 @@ def run_test(func_num: int, exe_name: str, args: List[int], num_threads: int) ->
                 results.append(line.split())
     return results
 
-def check_same(result1: Result, result2: Result) -> bool:
-    primes1 = [int(row[1]) for row in result1]
-    primes2 = [int(row[1]) for row in result2]
-    return primes1 == primes2
-
-def get_y_axis(result: Result, seq_result: Result) -> List[float]:
-    return [float(seq_result[idx][2]) / float(row[2]) for idx, row in enumerate(result)]
-
-def get_x_axis(result: Result) -> List[int]:
-    return [int(row[0]) for row in result]
-
 def run_tests(test_name: str, test_data: Dict[str, Any]):
+    print('Running', test_name, 'tests')
     test_data = TESTS[test_name]
-    num_funcs = test_data['num_funcs'] if 'num_funcs' in test_data else 1
-    args = test_data['args'] if 'args' in test_data else [[]]
+    num_funcs = test_data['funcs'] if 'funcs' in test_data else 1
+    test_args = test_data['args'] if 'args' in test_data else [[]]
+    get_x_axis = test_data['x']
+    get_y_axis = test_data['y']
+    check_same = test_data['same']
     for func_num in range(num_funcs):
-        for arg_idx, args in enumerate(args):
+        for arg_idx, args in enumerate(test_args):
             seq_results = []
             x_axis = np.array([])
             x_labels = []
             plt.figure(figsize=(15, 6))
             for num_threads in THREADS:
+                print('Running test with function', func_num, 'arguments', args, 'and', num_threads, 'threads')
                 if num_threads == 1:
                     seq_results = run_test(func_num, test_name, args, num_threads)
                     x_labels = get_x_axis(seq_results)
@@ -76,6 +85,7 @@ def run_tests(test_name: str, test_data: Dict[str, Any]):
                         exit(1)
                     if not check_same(seq_results, results):
                         print('Results mismatch for ', func_num, args, num_threads, seq_results, results, file=stderr)
+                        print('Test FAILED')
                         exit(2)
                     speedups = get_y_axis(results, seq_results)
                     bar_width = WIDTH / (len(THREADS) - 1)
@@ -87,11 +97,19 @@ def run_tests(test_name: str, test_data: Dict[str, Any]):
             plt.ylabel('Speedup')
             plt.xticks(x_axis, x_labels)
             plt.legend()
-            plt.savefig(join(BUILD_DIR, f'results-{func_num}-{arg_idx}.svg'))
+            plt.savefig(join(BUILD_DIR, f'results-{test_name}-{func_num}-{arg_idx}.svg'))
+    print('Test PASSED')
 
 def main():
-    for test_name, test_data in TESTS.items():
-        run_tests(test_name, test_data)
+    if len(argv) > 1:
+        test_name = argv[1]
+        if test_name not in TESTS:
+            print('Invalid test name.')
+            exit(3)
+        run_tests(test_name, TESTS[test_name])
+    else:
+        for test_name, test_data in TESTS.items():
+            run_tests(test_name, test_data)
 
 
 if __name__ == '__main__':

@@ -300,7 +300,7 @@ int main(void)
         prnout(move, ekin, epot, tscale, vir, vel, count, NPART, den);
     }
 
-    printf("Time = %lf\n", time);
+    printf("%d    %lf\n", movemx, time);
 
     return 0;
 }
