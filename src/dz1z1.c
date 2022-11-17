@@ -3,7 +3,7 @@
 #include <math.h>
 #include <omp.h>
 #include <unistd.h>
-#include "../util.h"
+#include "util.h"
 
 int prime_number_z1(int n)
 {

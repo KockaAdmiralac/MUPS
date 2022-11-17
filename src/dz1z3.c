@@ -4,7 +4,7 @@
 #include <time.h>
 #include <sys/param.h>
 #include <omp.h>
-#include "../util.h"
+#include "util.h"
 
 double potential(double a, double b, double c, double x, double y, double z)
 {

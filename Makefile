@@ -1,3 +1,6 @@
+BUILD_DIR = gen
+SOURCE_DIR = src
+
 CC = gcc
 
 CC_FLAGS = -fopenmp -O3
@@ -8,17 +11,19 @@ ifeq ($(DEBUG), 1)
 CC_FLAGS += -DDEBUG
 endif
 
-all: dz1z1/prime dz1z3/feynman dz1z5/moldyn
+all: $(BUILD_DIR)/prime $(BUILD_DIR)/feynman $(BUILD_DIR)/moldyn
 
-dz1z1/prime: dz1z1/prime.c util.c
+$(BUILD_DIR)/prime: $(SOURCE_DIR)/dz1z1.c $(SOURCE_DIR)/util.c | $(BUILD_DIR)
 	$(CC) $(CC_FLAGS) $(^) -o $(@) $(LIBS)
 
-dz1z3/feynman: dz1z3/feynman.c util.c
+$(BUILD_DIR)/feynman: $(SOURCE_DIR)/dz1z3.c $(SOURCE_DIR)/util.c | $(BUILD_DIR)
 	$(CC) $(CC_FLAGS) $(^) -o $(@) $(LIBS)
 
-dz1z5/moldyn: dz1z5/moldyn.c util.c
+$(BUILD_DIR)/moldyn: $(SOURCE_DIR)/dz1z5.c $(SOURCE_DIR)/util.c | $(BUILD_DIR)
 	$(CC) $(CC_FLAGS) $(^) -o $(@) $(LIBS)
+
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
 
 clean:
-	rm -f dz1z1/prime
-	rm -f dz1z3/feynman
+	rm -rf $(BUILD_DIR)

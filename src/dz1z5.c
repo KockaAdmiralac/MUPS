@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <omp.h>
-#include "../util.h"
+#include "util.h"
 
 #define MM 15
 #define NPART 4 * MM *MM *MM
