@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
-#include <sys/param.h>
 #include <omp.h>
 #include "util.h"
 
@@ -24,52 +23,11 @@ double r8_uniform_01(int *seed)
     return (double)(*seed) * 4.656612875E-10;
 }
 
-// print na stdout upotrebiti u validaciji paralelnog resenja
-int main(int argc, char **argv)
+double feynman_z3(const double a, const double b, const double c, const double h, const double stepsz, const int ni, const int nj, const int nk, const int N)
 {
-    const double a = 3.0;
-    const double b = 2.0;
-    const double c = 1.0;
-    const double h = 0.001;
-    const double stepsz = sqrt(3 * h);
-
-    int seed = 123456789;
-
-    if (argc < 2)
-    {
-        printf("Invalid number of arguments passed.\n");
-        return 1;
-    }
-    const int N = atoi(argv[1]);
-
-    int ni;
-    int nj;
-    int nk;
-    if (a == MIN(MIN(a, b), c))
-    {
-        ni = 6;
-        nj = 1 + ceil(b / a) * (ni - 1);
-        nk = 1 + ceil(c / a) * (ni - 1);
-    }
-    else if (b == MIN(MIN(a, b), c))
-    {
-        nj = 6;
-        ni = 1 + ceil(a / b) * (nj - 1);
-        nk = 1 + ceil(c / b) * (nj - 1);
-    }
-    else
-    {
-        nk = 6;
-        ni = 1 + ceil(a / c) * (nk - 1);
-        nj = 1 + ceil(b / c) * (nk - 1);
-    }
-
     double err = 0.0;
     int n_inside = 0;
-
-    printf("TEST: N=%d, num_threads=%ld\n", N, get_num_threads());
-    double wtime = omp_get_wtime();
-
+    int seed = 123456789;
 #pragma omp parallel default(none) shared(a, b, c, h, stepsz, ni, nj, nk, N) firstprivate(seed) reduction(+                  \
                                                                                                           : err) reduction(+ \
                                                                                                                            : n_inside)
@@ -183,11 +141,160 @@ int main(int argc, char **argv)
             }
         }
     }
-    err = sqrt(err / (double)(n_inside));
-    wtime = omp_get_wtime() - wtime;
+    return sqrt(err / (double)(n_inside));
+}
 
-    printf("RMS absolute error in solution = %e\n", err);
-    printf("Time: %lf\n", wtime);
+double feynman_z4(const double a, const double b, const double c, const double h, const double stepsz, const int ni, const int nj, const int nk, const int N)
+{
+    int n_inside = 0;
+    double w_exact[17][12][7];
+    double wt[17][12][7];
+    static int seed = 123456789;
+#pragma omp threadprivate(seed)
+#pragma omp parallel default(none) shared(a, b, c, h, stepsz, ni, nj, nk, N, n_inside, w_exact, wt)
+    {
+        seed += omp_get_thread_num();
+#pragma omp single
+        {
+            for (int i = 1; i <= ni; i++)
+            {
+                for (int j = 1; j <= nj; j++)
+                {
+                    for (int k = 1; k <= nk; k++)
+                    {
+                        double x = ((double)(ni - i) * (-a) + (double)(i - 1) * a) / (double)(ni - 1);
+                        double y = ((double)(nj - j) * (-b) + (double)(j - 1) * b) / (double)(nj - 1);
+                        double z = ((double)(nk - k) * (-c) + (double)(k - 1) * c) / (double)(nk - 1);
+                        double chk = pow(x / a, 2) + pow(y / b, 2) + pow(z / c, 2);
+                        w_exact[i][j][k] = 0.0;
+                        wt[i][j][k] = 0.0;
+
+                        if (1.0 < chk)
+                        {
+                            continue;
+                        }
+
+                        ++n_inside;
+
+                        w_exact[i][j][k] = exp(pow(x / a, 2) + pow(y / b, 2) + pow(z / c, 2) - 1.0);
+
+                        for (int trial = 0; trial < N; trial++)
+                        {
+#pragma omp task shared(wt)
+                            {
+                                double x1 = x;
+                                double x2 = y;
+                                double x3 = z;
+                                double w = 1.0;
+                                chk = 0.0;
+                                while (chk < 1.0)
+                                {
+                                    double ut = r8_uniform_01(&seed);
+                                    double us;
+
+                                    double dx;
+                                    if (ut < 1.0 / 3.0)
+                                    {
+                                        us = r8_uniform_01(&seed) - 0.5;
+                                        if (us < 0.0)
+                                            dx = -stepsz;
+                                        else
+                                            dx = stepsz;
+                                    }
+                                    else
+                                        dx = 0.0;
+
+                                    double dy;
+                                    ut = r8_uniform_01(&seed);
+                                    if (ut < 1.0 / 3.0)
+                                    {
+                                        us = r8_uniform_01(&seed) - 0.5;
+                                        if (us < 0.0)
+                                            dy = -stepsz;
+                                        else
+                                            dy = stepsz;
+                                    }
+                                    else
+                                        dy = 0.0;
+
+                                    double dz;
+                                    ut = r8_uniform_01(&seed);
+                                    if (ut < 1.0 / 3.0)
+                                    {
+                                        us = r8_uniform_01(&seed) - 0.5;
+                                        if (us < 0.0)
+                                            dz = -stepsz;
+                                        else
+                                            dz = stepsz;
+                                    }
+                                    else
+                                        dz = 0.0;
+
+                                    double vs = potential(a, b, c, x1, x2, x3);
+                                    x1 = x1 + dx;
+                                    x2 = x2 + dy;
+                                    x3 = x3 + dz;
+
+                                    double vh = potential(a, b, c, x1, x2, x3);
+
+                                    double we = (1.0 - h * vs) * w;
+                                    w = w - 0.5 * h * (vh * we + vs * w);
+
+                                    chk = pow(x1 / a, 2) + pow(x2 / b, 2) + pow(x3 / c, 2);
+                                }
+#pragma omp atomic
+                                wt[i][j][k] += w;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    double err = 0.0;
+    for (int i = 0; i <= 16; ++i)
+    {
+        for (int j = 0; j <= 11; ++j)
+        {
+            for (int k = 0; k <= 6; ++k)
+            {
+                if (w_exact[i][j][k] == 0.0)
+                {
+                    continue;
+                }
+                err += pow(w_exact[i][j][k] - (wt[i][j][k] / (double)(N)), 2);
+            }
+        }
+    }
+    return sqrt(err / (double)(n_inside));
+}
+
+double (*FUNCS[])(const double, const double, const double, const double, const double, const int, const int, const int, const int) = {feynman_z3, feynman_z4};
+
+int main(int argc, char **argv)
+{
+    const double a = 3.0;
+    const double b = 2.0;
+    const double c = 1.0;
+    const double h = 0.001;
+    const double stepsz = sqrt(3 * h);
+    const int ni = 16;
+    const int nj = 11;
+    const int nk = 6;
+
+    if (argc < 3)
+    {
+        printf("Invalid number of arguments passed.\n");
+        return 1;
+    }
+    const int func = atoi(argv[1]);
+    const int N = atoi(argv[2]);
+
+    printf("TEST: func=%d, N=%d, num_threads=%ld\n", func, N, get_num_threads());
+    double wtime = omp_get_wtime();
+    double err = FUNCS[func](a, b, c, h, stepsz, ni, nj, nk, N);
+    wtime = omp_get_wtime() - wtime;
+    printf("%d    %lf    %lf\n", N, err, wtime);
     printf("TEST END\n");
 
     return 0;
