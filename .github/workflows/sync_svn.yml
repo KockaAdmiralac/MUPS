@@ -14,4 +14,4 @@ jobs:
         port: ${{ secrets.SSH_PORT }}
         script: |
           cd ${{ secrets.REPO_LOCATION }}
-          git pull
+          ./commit.sh
