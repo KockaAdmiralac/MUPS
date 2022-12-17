@@ -1,5 +1,5 @@
 #pragma once
 
-#define TIME_SIZE 40
+#define MASTER 0
 
 long get_num_threads(void);
