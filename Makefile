@@ -12,7 +12,7 @@ ifeq ($(DEBUG), 1)
 CC_FLAGS += -DDEBUG
 endif
 
-all: $(BUILD_DIR)/prime $(BUILD_DIR)/feynman $(BUILD_DIR)/moldyn $(BUILD_DIR)/prime-mpi $(BUILD_DIR)/feynman-mpi
+all: $(BUILD_DIR)/prime $(BUILD_DIR)/feynman $(BUILD_DIR)/moldyn $(BUILD_DIR)/prime-mpi $(BUILD_DIR)/feynman-mpi $(BUILD_DIR)/moldyn-mpi
 
 $(BUILD_DIR)/prime: $(SOURCE_DIR)/dz1z1.c $(SOURCE_DIR)/util.c | $(BUILD_DIR)
 	$(OMPCC) $(CC_FLAGS) $(^) -o $(@) $(LIBS)
@@ -27,6 +27,9 @@ $(BUILD_DIR)/prime-mpi: $(SOURCE_DIR)/dz2z1.c $(SOURCE_DIR)/util.c | $(BUILD_DIR
 	$(MPICC) $(CC_FLAGS) $(^) -o $(@) $(LIBS)
 
 $(BUILD_DIR)/feynman-mpi: $(SOURCE_DIR)/dz2z2.c $(SOURCE_DIR)/util.c | $(BUILD_DIR)
+	$(MPICC) $(CC_FLAGS) $(^) -o $(@) $(LIBS)
+
+$(BUILD_DIR)/moldyn-mpi: $(SOURCE_DIR)/dz2z3.c $(SOURCE_DIR)/util.c | $(BUILD_DIR)
 	$(MPICC) $(CC_FLAGS) $(^) -o $(@) $(LIBS)
 
 $(BUILD_DIR):
