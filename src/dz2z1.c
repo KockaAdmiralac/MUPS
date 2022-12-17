@@ -3,8 +3,7 @@
 #include <math.h>
 #include <time.h>
 #include <mpi.h>
-
-#define MASTER 0
+#include "util.h"
 
 int prime_number(int n)
 {
