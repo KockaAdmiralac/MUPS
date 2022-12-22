@@ -12,10 +12,10 @@ int prime_number(int n)
     int rank;
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    for (int i = 2 + rank; i <= n; i += size)
+    for (int i = 3 + rank * 2; i <= n; i += size * 2)
     {
         int prime = 1;
-        for (int j = 2; j < i; j++)
+        for (int j = 3; j < i; j += 2)
         {
             if ((i % j) == 0)
             {
@@ -27,7 +27,7 @@ int prime_number(int n)
     }
     int mpi_total = 0;
     MPI_Reduce(&total, &mpi_total, 1, MPI_INT, MPI_SUM, MASTER, MPI_COMM_WORLD);
-    return mpi_total;
+    return mpi_total + 1;
 }
 
 int main(int argc, char *argv[])
