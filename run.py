@@ -68,6 +68,13 @@ TESTS = {
         'y': lambda result, seq_result: [max(float(seq_result[-1][1]), 0.0000001) / max(float(result[-1][1]), 0.0000001)],
         'same': lambda result1, result2: [float(row[1]) for row in result1[:-1]] == [float(row[1]) for row in result2[:-1]],
         'threads': [1, 4]
+    },
+    'moldyn-mw-mpi': {
+        'type': 'mpi',
+        'x': lambda result: [int(result[-1][0])],
+        'y': lambda result, seq_result: [max(float(seq_result[-1][1]), 0.0000001) / max(float(result[-1][1]), 0.0000001)],
+        'same': lambda result1, result2: [float(row[1]) for row in result1[:-1]] == [float(row[1]) for row in result2[:-1]],
+        'threads': [2, 4]
     }
 }
 
@@ -81,7 +88,7 @@ def run_test(func_num: int, test_type: str, exe_name: str, args: List[int], num_
         process_args = [f'{BUILD_DIR}/{exe_name}', str(func_num)]
         log_filename = ' '.join(process_args + stringified_args + [str(num_threads)])
     elif test_type == 'mpi':
-        process_args = ['mpiexec', '--mca', 'opal_warn_on_missing_libcuda', '0', '-np', str(num_threads), f'{BUILD_DIR}/{exe_name}']
+        process_args = ['mpiexec', '-np', str(num_threads), f'{BUILD_DIR}/{exe_name}']
         log_filename = f'{exe_name} {" ".join(stringified_args)} {num_threads}'
     else:
         raise BaseException('Unknown test type.')
