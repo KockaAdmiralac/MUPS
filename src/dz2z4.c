@@ -4,40 +4,66 @@
 #include <mpi.h>
 #include "util.h"
 
-// Number of particles
 #define MM 15
 #define NPART 4 * MM *MM *MM
-
-// Block partitioning
 #define BLOCK_SIZE 450
 
-// Tags
 enum tags
 {
     END_TAG = 1000,
     BLOCK_START_TAG,
-    VIR_TAG,
-    EPOT_TAG,
-    EKIN_SUM_TAG,
-    VEL_TAG,
-    COUNT_TAG,
-    SCALE_TAG,
+    SYNC_TAG,
+    RESULT_TAG,
 };
 
-// Constants
-const double c_den = 0.83134;
-const double c_tref = 0.722;
-double c_rcoff = (double)MM / 4.0;
-const double c_h = 0.064;
-const int c_irep = 10;
-const int c_istop = 20;
-const int c_movemx = 20;
-const double c_hsq = c_h * c_h;
-const double c_hsq2 = c_hsq * 0.5;
-const double c_tscale = 16.0 / ((double)NPART - 1.0);
+double epot;
+double vir;
+double count;
 
-// FCC lattice
-void fcc(double x[], const int mm, const double a)
+void dfill(int n, double val, double a[], int ia)
+{
+    for (int i = 0; i < (n - 1) * ia + 1; i += ia)
+    {
+        a[i] = val;
+    }
+}
+
+void domove(int n3, double x[], double vh[], double f[], double side)
+{
+    for (int i = 0; i < n3; i++)
+    {
+        x[i] += vh[i] + f[i];
+        // Periodic boundary conditions
+        if (x[i] < 0.0)
+            x[i] += side;
+        if (x[i] > side)
+            x[i] -= side;
+        // Partial velocity updates
+        vh[i] += f[i];
+        // Initialise forces for the next iteration
+        f[i] = 0.0;
+    }
+}
+
+void dscal(int n, double sa, double sx[], int incx)
+{
+    if (incx == 1)
+    {
+        for (int i = 0; i < n; i++)
+            sx[i] *= sa;
+    }
+    else
+    {
+        int j = 0;
+        for (int i = 0; i < n; i++)
+        {
+            sx[j] *= sa;
+            j += incx;
+        }
+    }
+}
+
+void fcc(double x[], int mm, double a)
 {
     int ijk = 0;
 
@@ -64,37 +90,73 @@ void fcc(double x[], const int mm, const double a)
                 }
 }
 
-void dfill(double a[], const int n, const double val, const int ia)
+void forces(int offset, int npart, double x[], double f[], double side, double rcoff)
 {
-    for (int i = 0; i < (n - 1) * ia + 1; i += ia)
+    double sideh = 0.5 * side;
+    double rcoffs = rcoff * rcoff;
+
+    for (int i = offset * 3; i < (offset + BLOCK_SIZE) * 3; i += 3)
     {
-        a[i] = val;
+        for (int j = i + 3; j < npart * 3; j += 3)
+        {
+            double xx = x[i] - x[j];
+            double yy = x[i + 1] - x[j + 1];
+            double zz = x[i + 2] - x[j + 2];
+            if (xx < -sideh)
+                xx += side;
+            if (xx > sideh)
+                xx -= side;
+            if (yy < -sideh)
+                yy += side;
+            if (yy > sideh)
+                yy -= side;
+            if (zz < -sideh)
+                zz += side;
+            if (zz > sideh)
+                zz -= side;
+            double rd = xx * xx + yy * yy + zz * zz;
+
+            if (rd <= rcoffs)
+            {
+                double rrd = 1.0 / rd;
+                double rrd2 = rrd * rrd;
+                double rrd3 = rrd2 * rrd;
+                double rrd4 = rrd2 * rrd2;
+                double rrd6 = rrd2 * rrd4;
+                double rrd7 = rrd6 * rrd;
+                epot += rrd6 - rrd3;
+                double r148 = rrd7 - 0.5 * rrd4;
+                vir -= rd * r148;
+                double forcex = xx * r148;
+                double forcey = yy * r148;
+                double forcez = zz * r148;
+                f[i] += forcex;
+                f[j] -= forcex;
+                f[i + 1] += forcey;
+                f[j + 1] -= forcey;
+                f[i + 2] += forcez;
+                f[j + 2] -= forcez;
+            }
+        }
     }
 }
 
-// Change in position
-// Changes: x, vh, f
-// Needs: x, vh, f
-void domove(double x[], double vh[], double f[], const int n3, const double side)
+double mkekin(int npart, double f[], double vh[], double hsq2, double hsq)
 {
-    for (int i = 0; i < n3; i++)
+    double sum = 0.0;
+
+    for (int i = 0; i < 3 * npart; i++)
     {
-        x[i] += vh[i] + f[i];
-        // Periodic boundary conditions
-        if (x[i] < 0.0)
-            x[i] += side;
-        if (x[i] > side)
-            x[i] -= side;
-        // Partial velocity updates
+        f[i] *= hsq2;
         vh[i] += f[i];
-        // Initialise forces for the next iteration
-        f[i] = 0.0;
+        sum += vh[i] * vh[i];
     }
+
+    return sum / hsq;
 }
 
 // Sample Maxwell distribution at temperature tref
-// Used only in initialization of vh
-void mxwell(double vh[], const int n3)
+void mxwell(double vh[], int n3, double h, double tref)
 {
     int npart = n3 / 3;
     double ekin = 0.0;
@@ -148,94 +210,29 @@ void mxwell(double vh[], const int n3)
         ekin += vh[i] * vh[i];
     }
 
-    double sc = c_h * sqrt(c_tref / (tscale * ekin));
+    double sc = h * sqrt(tref / (tscale * ekin));
     for (int i = 0; i < n3; i++)
         vh[i] *= sc;
 }
 
-void forces(int start, int npart, int fsize, double x[], double f[], double side, double *vir_o, double *epot_o)
+void prnout(int move, double ekin, double epot, double tscale, double vir, double vel, double count, int npart, double den)
 {
-    double vir = 0.0;
-    double epot = 0.0;
-    double sideh = 0.5 * side;
-    double rcoffs = c_rcoff * c_rcoff;
-
-    for (int i = 0; i < npart * 3; i += 3)
-    {
-        for (int j = i + 3; j < npart * 3; j += 3)
-        {
-            double xx = x[i] - x[j];
-            double yy = x[i + 1] - x[j + 1];
-            double zz = x[i + 2] - x[j + 2];
-            if (xx < -sideh)
-                xx += side;
-            if (xx > sideh)
-                xx -= side;
-            if (yy < -sideh)
-                yy += side;
-            if (yy > sideh)
-                yy -= side;
-            if (zz < -sideh)
-                zz += side;
-            if (zz > sideh)
-                zz -= side;
-            double rd = xx * xx + yy * yy + zz * zz;
-
-            if (rd <= rcoffs)
-            {
-                double rrd = 1.0 / rd;
-                double rrd2 = rrd * rrd;
-                double rrd3 = rrd2 * rrd;
-                double rrd4 = rrd2 * rrd2;
-                double rrd6 = rrd2 * rrd4;
-                double rrd7 = rrd6 * rrd;
-                epot += rrd6 - rrd3;
-                double r148 = rrd7 - 0.5 * rrd4;
-                vir -= rd * r148;
-                double forcex = xx * r148;
-                double forcey = yy * r148;
-                double forcez = zz * r148;
-                if (i >= start && i < start + fsize)
-                {
-                    f[i - start] += forcex;
-                    f[i + 1 - start] += forcey;
-                    f[i + 2 - start] += forcez;
-                }
-                if (j >= start && j < start + fsize)
-                {
-                    f[j - start] -= forcex;
-                    f[j + 1 - start] -= forcey;
-                    f[j + 2 - start] -= forcez;
-                }
-            }
-        }
-    }
-    if (epot_o != NULL)
-        *epot_o = epot;
-    if (vir_o != NULL)
-        *vir_o = vir;
+    double ek = 24.0 * ekin;
+    epot *= 4.0;
+    double etot = ek + epot;
+    double temp = tscale * ekin;
+    double pres = den * 16.0 * (ekin - vir) / (double)npart;
+    vel /= (double)npart;
+    double rp = (count / (double)npart) * 100.0;
+    printf(" %6d%12.4f%12.4f%12.4f%10.4f%10.4f%10.4f%6.1f\n", move, ek, epot, etot, temp, pres, vel, rp);
 }
 
-double mkekin(const int npart, double f[], double vh[])
+double velavg(int npart, double vh[], double vaver, double h)
 {
-    double sum = 0.0;
-
-    for (int i = 0; i < 3 * npart; i++)
-    {
-        f[i] *= c_hsq2;
-        vh[i] += f[i];
-        sum += vh[i] * vh[i];
-    }
-
-    return sum;
-}
-
-double velavg(const int npart, double vh[], const double vaver, double *count_o)
-{
-    double vaverh = vaver * c_h;
+    double vaverh = vaver * h;
     double vel = 0.0;
 
-    double count = 0.0;
+    count = 0.0;
     for (int i = 0; i < npart * 3; i += 3)
     {
         double sq = sqrt(vh[i] * vh[i] + vh[i + 1] * vh[i + 1] + vh[i + 2] * vh[i + 2]);
@@ -243,19 +240,31 @@ double velavg(const int npart, double vh[], const double vaver, double *count_o)
             count++;
         vel += sq;
     }
-
-    // vel /= c_h;
-    if (count_o != NULL)
-        *count_o = count;
+    vel /= h;
 
     return vel;
 }
 
-int main(int argc, char *argv)
+int main(int argc, char **argv)
 {
-    const double c_side = pow((double)NPART / c_den, 0.3333333);
-    const double c_a = c_side / (double)MM;
-    const double c_vaver = 1.13 * sqrt(c_tref / 24.0);
+    double x[NPART * 3];
+    double vh[NPART * 3];
+    double f[NPART * 3];
+
+    double den = 0.83134;
+    double side = pow((double)NPART / den, 0.3333333);
+    double tref = 0.722;
+    double rcoff = (double)MM / 4.0;
+    double h = 0.064;
+    int irep = 10;
+    int istop = 20;
+    int movemx = 20;
+
+    double a = side / (double)MM;
+    double hsq = h * h;
+    double hsq2 = hsq * 0.5;
+    double tscale = 16.0 / ((double)NPART - 1.0);
+    double vaver = 1.13 * sqrt(tref / 24.0);
 
     MPI_Init(&argc, &argv);
     int rank;
@@ -263,172 +272,131 @@ int main(int argc, char *argv)
 
     if (rank == MASTER)
     {
-        // MPI size
         int size;
         MPI_Comm_size(MPI_COMM_WORLD, &size);
+        printf("TEST: num_threads=%d\n", size);
 
-        double x[NPART * 3];
-        // Temporary vh and f for initializing x
-        double *vh_t = malloc(NPART * 3 * sizeof(double));
-        double *f_t = malloc(NPART * 3 * sizeof(double));
+        // Generate fcc lattice for atoms inside box
+        fcc(x, MM, a);
+        // Initialize velocities and forces (which are zero in fcc positions)
+        mxwell(vh, 3 * NPART, h, tref);
+        dfill(3 * NPART, 0.0, f, 1);
 
-        // Initialize x
-        fcc(x, MM, c_a);
-        mxwell(vh_t, 3 * NPART);
-        dfill(f_t, 3 * NPART, 0.0, 1);
-        domove(x, vh_t, f_t, 3 * NPART, c_side);
-
-        free(vh_t);
-        free(f_t);
-
-        // Send initial x
-        MPI_Bcast(x, NPART * 3, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
-
-        // Time measuring
         double time = 0.0;
 
-        unsigned excess = 0;
-        for (int move = 1; move <= c_movemx; ++move)
+        int excess = 0;
+        for (int move = 1; move <= movemx; ++move)
         {
-            // Time measuring
             double start = MPI_Wtime();
-
-            // Aggregated results
-            double vir_sum = 0;
-            double epot_sum = 0;
-            double ekin = 0;
-            double vel_sum = 0;
-            double count_sum = 0;
-
-            // Block distribution
-            unsigned total_blocks = NPART / BLOCK_SIZE + (NPART % BLOCK_SIZE != 0);
-            unsigned sent = 0;
-            unsigned processed = 0;
-
-            int scale = (move < c_istop && fmod(move, c_irep) == 0);
-
-            // Send everyone a block to process
-            while (sent < size - 1)
+            // Move the particles and partially update velocities
+            domove(3 * NPART, x, vh, f, side);
+            // Compute forces in the new positions and accumulate the virial
+            // and potential energy.
+            if (move == 1)
             {
-                int block = sent * BLOCK_SIZE;
-                if (sent < total_blocks)
+                MPI_Bcast(x, NPART * 3, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+                MPI_Bcast(f, NPART * 3, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+            }
+
+            int sent = 0, processed = 0;
+            int blocks = NPART / BLOCK_SIZE + (NPART % BLOCK_SIZE != 0);
+            while (sent + excess < size - 1)
+            {
+                if (sent < blocks)
                 {
-                    MPI_Send(&block, 1, MPI_INT, sent + 1, BLOCK_START_TAG, MPI_COMM_WORLD);
+                    int offset = sent * BLOCK_SIZE;
+                    MPI_Send(&offset, 1, MPI_INT, sent + 1, BLOCK_START_TAG, MPI_COMM_WORLD);
                     sent++;
                 }
                 else
                 {
-                    MPI_Send(&block, 1, MPI_INT, sent + 1, END_TAG, MPI_COMM_WORLD);
-                    excess++;
+                    int _ = 0;
+                    MPI_Send(&_, 1, MPI_INT, sent + 1, END_TAG, MPI_COMM_WORLD);
                 }
             }
-            while (processed < total_blocks)
+
+            while (processed < blocks)
             {
-                int block;
                 MPI_Status status;
-                MPI_Recv(&block, 1, MPI_LONG_INT, MPI_ANY_SOURCE, BLOCK_START_TAG, MPI_COMM_WORLD, &status);
+                int offset;
+                MPI_Recv(&offset, 1, MPI_INT, MPI_ANY_SOURCE, SYNC_TAG, MPI_COMM_WORLD, &status);
                 int worker = status.MPI_SOURCE;
-
-                // Receive vir and epot
-                double vir;
-                double epot;
-                MPI_Recv(&vir, 1, MPI_DOUBLE, worker, VIR_TAG, MPI_COMM_WORLD, &status);
-                vir_sum += vir;
-                MPI_Recv(&epot, 1, MPI_DOUBLE, worker, EPOT_TAG, MPI_COMM_WORLD, &status);
-                epot_sum += epot;
-
-                // Receive ekin sum
-                double ekin_sum;
-                MPI_Recv(&ekin_sum, 1, MPI_DOUBLE, worker, EPOT_TAG, MPI_COMM_WORLD, &status);
-                ekin += ekin_sum;
-
-                // Receive vel and count (velavg)
-                double vel;
-                double count;
-                MPI_Recv(&vel, 1, MPI_DOUBLE, worker, VEL_TAG, MPI_COMM_WORLD, &status);
-                vel_sum += vel;
-                MPI_Recv(&count, 1, MPI_DOUBLE, worker, COUNT_TAG, MPI_COMM_WORLD, &status);
-                count_sum += count;
-
                 processed++;
+                if (sent < blocks)
+                {
+                    offset = sent * BLOCK_SIZE;
+                    MPI_Send(&offset, 1, MPI_INT, worker, BLOCK_START_TAG, MPI_COMM_WORLD);
+                    sent++;
+                }
+                else
+                {
+                    MPI_Send(&offset, 1, MPI_INT, worker, RESULT_TAG, MPI_COMM_WORLD);
+                }
             }
 
-            // TODO Synchronization
+            MPI_Allreduce(MPI_IN_PLACE, &vir, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+            MPI_Allreduce(MPI_IN_PLACE, &epot, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+            MPI_Allreduce(MPI_IN_PLACE, f, NPART * 3, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+            MPI_Bcast(x, NPART * 3, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
 
-            ekin /= c_hsq;
-            vel_sum /= c_h;
-
-            // Send scaling
-            // Send entire x
-
+            // Scale forces, complete update of velocities and compute k.e.
+            double ekin = mkekin(NPART, f, vh, hsq2, hsq);
+            // Average the velocity and temperature scale if desired
+            double vel = velavg(NPART, vh, vaver, h);
+            if (move < istop && fmod(move, irep) == 0)
+            {
+                double sc = sqrt(tref / (tscale * ekin));
+                dscal(3 * NPART, sc, vh, 1);
+                ekin = tref / tscale;
+            }
             time += MPI_Wtime() - start;
-            prnout(move, ekin, epot_sum, c_tscale, vir_sum, vel_sum, count_sum, NPART, c_den);
+            if (rank == MASTER)
+            {
+                prnout(move, ekin, epot, tscale, vir, vel, count, NPART, den);
+            }
+        }
+        for (int i = 0; i < (size - excess - 1); i++)
+        {
+            MPI_Send(&i, 1, MPI_INT, i + 1, END_TAG, MPI_COMM_WORLD);
         }
 
-        printf("%d    %lf\n", c_movemx, time);
+        printf("%d    %lf\n", movemx, time);
     }
     else
     {
-        // Entire x, needed for forces
-        double x[3 * NPART];
-        // Blocks of f and vh
-        double f[3 * BLOCK_SIZE];
-        double vh[3 * BLOCK_SIZE];
-
-        // Initialize vh
-        mxwell(vh, 3 * BLOCK_SIZE);
-
-        // Initialize f
-        dfill(f, 3 * BLOCK_SIZE, 0.0, 1);
-
-        // Receive initial x
         MPI_Bcast(x, NPART * 3, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+        MPI_Bcast(f, NPART * 3, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+        vir = 0.0;
+        epot = 0.0;
 
         int needed = 1;
         while (needed)
         {
-            int block;
+            int offset = 0;
+
             MPI_Status status;
-            MPI_Recv(&block, 1, MPI_INT, MASTER, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+            MPI_Recv(&offset, 1, MPI_INT, MASTER, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
             if (status.MPI_TAG == BLOCK_START_TAG)
             {
-                int start = block;
-
-                double epot;
-                double vir;
-                forces(start, 3 * NPART, 3 * BLOCK_SIZE, x, f, c_side, &vir, &epot);
-                // f <- x, -> vir, epot
-
-                double sum;
-                sum = mkekin(BLOCK_SIZE, f, vh);
-                // vh <- f, -> sum
-
-                double count;
-                double vel;
-                vel = velavg(BLOCK_SIZE, vh, c_vaver, &count);
-                // vh, -> vel, count
-
-                
-                // Send block
-                MPI_Send(&start, 1, MPI_INT, MASTER, BLOCK_START_TAG, MPI_COMM_WORLD);
-                // Send vir (forces)
-                MPI_Send(&vir, 1, MPI_DOUBLE, MASTER, VIR_TAG, MPI_COMM_WORLD);
-                // Send epot (forces)
-                MPI_Send(&epot, 1, MPI_DOUBLE, MASTER, EPOT_TAG, MPI_COMM_WORLD);
-                // Send sum (mkekin)
-                MPI_Send(&sum, 1, MPI_DOUBLE, MASTER, EKIN_SUM_TAG, MPI_COMM_WORLD);
-                // Send vel (velavg)
-                MPI_Send(&vel, 1, MPI_DOUBLE, MASTER, VEL_TAG, MPI_COMM_WORLD);
-                // Send count (velavg)
-                MPI_Send(&count, 1, MPI_DOUBLE, MASTER, COUNT_TAG, MPI_COMM_WORLD);
+                forces(offset, NPART, x, f, side, rcoff);
+                MPI_Send(&offset, 1, MPI_INT, MASTER, SYNC_TAG, MPI_COMM_WORLD);
+            }
+            else if (status.MPI_TAG == RESULT_TAG)
+            {
+                MPI_Allreduce(MPI_IN_PLACE, &vir, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+                MPI_Allreduce(MPI_IN_PLACE, &epot, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+                MPI_Allreduce(MPI_IN_PLACE, f, NPART * 3, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+                MPI_Bcast(x, NPART * 3, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+                vir = 0.0;
+                epot = 0.0;
             }
             else if (status.MPI_TAG == END_TAG)
-            {
                 needed = 0;
-            }
         }
-    }
 
+        printf("%d: finished work\n", rank);
+    }
     MPI_Finalize();
+
     return 0;
 }
