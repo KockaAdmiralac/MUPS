@@ -284,7 +284,6 @@ int main(int argc, char **argv)
 
         double time = 0.0;
 
-        int excess = 0;
         for (int move = 1; move <= movemx; ++move)
         {
             double start = MPI_Wtime();
@@ -292,15 +291,13 @@ int main(int argc, char **argv)
             domove(3 * NPART, x, vh, f, side);
             // Compute forces in the new positions and accumulate the virial
             // and potential energy.
-            if (move == 1)
-            {
-                MPI_Bcast(x, NPART * 3, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
-                MPI_Bcast(f, NPART * 3, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
-            }
-
-            int sent = 0, processed = 0;
-            int blocks = NPART / BLOCK_SIZE + (NPART % BLOCK_SIZE != 0);
-            while (sent + excess < size - 1)
+            int sent = 0;
+            int processed = 0;
+            int blocks = NPART / BLOCK_SIZE;
+            for (int i = 0; i < size - 1; ++i)
+                MPI_Send(&sent, 1, MPI_INT, i + 1, SYNC_TAG, MPI_COMM_WORLD);
+            MPI_Bcast(x, NPART * 3, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+            while (sent < size - 1)
             {
                 if (sent < blocks)
                 {
@@ -314,7 +311,6 @@ int main(int argc, char **argv)
                     MPI_Send(&_, 1, MPI_INT, sent + 1, END_TAG, MPI_COMM_WORLD);
                 }
             }
-
             while (processed < blocks)
             {
                 MPI_Status status;
@@ -334,10 +330,11 @@ int main(int argc, char **argv)
                 }
             }
 
-            MPI_Allreduce(MPI_IN_PLACE, &vir, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-            MPI_Allreduce(MPI_IN_PLACE, &epot, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-            MPI_Allreduce(MPI_IN_PLACE, f, NPART * 3, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-            MPI_Bcast(x, NPART * 3, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+            vir = 0.0;
+            epot = 0.0;
+            MPI_Reduce(MPI_IN_PLACE, &vir, 1, MPI_DOUBLE, MPI_SUM, MASTER, MPI_COMM_WORLD);
+            MPI_Reduce(MPI_IN_PLACE, &epot, 1, MPI_DOUBLE, MPI_SUM, MASTER, MPI_COMM_WORLD);
+            MPI_Reduce(MPI_IN_PLACE, f, NPART * 3, MPI_DOUBLE, MPI_SUM, MASTER, MPI_COMM_WORLD);
 
             // Scale forces, complete update of velocities and compute k.e.
             double ekin = mkekin(NPART, f, vh, hsq2, hsq);
@@ -355,8 +352,9 @@ int main(int argc, char **argv)
                 prnout(move, ekin, epot, tscale, vir, vel, count, NPART, den);
             }
         }
-        for (int i = 0; i < (size - excess - 1); i++)
+        for (int i = 0; i < size - 1; i++)
         {
+            // TODO: We're sending this to workers we've previously dismissed
             MPI_Send(&i, 1, MPI_INT, i + 1, END_TAG, MPI_COMM_WORLD);
         }
 
@@ -364,8 +362,6 @@ int main(int argc, char **argv)
     }
     else
     {
-        MPI_Bcast(x, NPART * 3, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
-        MPI_Bcast(f, NPART * 3, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
         vir = 0.0;
         epot = 0.0;
 
@@ -381,20 +377,23 @@ int main(int argc, char **argv)
                 forces(offset, NPART, x, f, side, rcoff);
                 MPI_Send(&offset, 1, MPI_INT, MASTER, SYNC_TAG, MPI_COMM_WORLD);
             }
+            else if (status.MPI_TAG == SYNC_TAG)
+            {
+                MPI_Bcast(x, NPART * 3, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+                for (int i = 0; i < NPART * 3; ++i)
+                    f[i] = 0.0;
+            }
             else if (status.MPI_TAG == RESULT_TAG)
             {
-                MPI_Allreduce(MPI_IN_PLACE, &vir, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-                MPI_Allreduce(MPI_IN_PLACE, &epot, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-                MPI_Allreduce(MPI_IN_PLACE, f, NPART * 3, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-                MPI_Bcast(x, NPART * 3, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+                MPI_Reduce(&vir, &vir, 1, MPI_DOUBLE, MPI_SUM, MASTER, MPI_COMM_WORLD);
+                MPI_Reduce(&epot, &epot, 1, MPI_DOUBLE, MPI_SUM, MASTER, MPI_COMM_WORLD);
+                MPI_Reduce(f, f, NPART * 3, MPI_DOUBLE, MPI_SUM, MASTER, MPI_COMM_WORLD);
                 vir = 0.0;
                 epot = 0.0;
             }
             else if (status.MPI_TAG == END_TAG)
                 needed = 0;
         }
-
-        printf("%d: finished work\n", rank);
     }
     MPI_Finalize();
 

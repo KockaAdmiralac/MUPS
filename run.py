@@ -124,7 +124,7 @@ def run_tests(test_name: str, test_data: Dict[str, Any]):
             plt.figure(figsize=(15, 6))
             for num_threads in threads:
                 print('Running test with function', func_num, 'arguments', args, 'and', num_threads, 'threads')
-                if num_threads == 1:
+                if num_threads == threads[0]:
                     seq_results = run_test(func_num, test_type, test_name, args, num_threads)
                     x_labels = get_x_axis(seq_results)
                     x_axis = np.arange(len(x_labels)) * WIDTH
