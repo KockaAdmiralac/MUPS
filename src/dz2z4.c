@@ -90,12 +90,12 @@ void fcc(double x[], int mm, double a)
                 }
 }
 
-void forces(int offset, int npart, double x[], double f[], double side, double rcoff)
+void forces(int offset, int blockSize, int npart, double x[], double f[], double side, double rcoff)
 {
     double sideh = 0.5 * side;
     double rcoffs = rcoff * rcoff;
 
-    for (int i = offset * 3; i < (offset + BLOCK_SIZE) * 3; i += 3)
+    for (int i = offset * 3; i < (offset + blockSize) * 3; i += 3)
     {
         for (int j = i + 3; j < npart * 3; j += 3)
         {
@@ -291,50 +291,57 @@ int main(int argc, char **argv)
             domove(3 * NPART, x, vh, f, side);
             // Compute forces in the new positions and accumulate the virial
             // and potential energy.
-            int sent = 0;
-            int processed = 0;
-            int blocks = NPART / BLOCK_SIZE;
-            for (int i = 0; i < size - 1; ++i)
-                MPI_Send(&sent, 1, MPI_INT, i + 1, SYNC_TAG, MPI_COMM_WORLD);
-            MPI_Bcast(x, NPART * 3, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
-            while (sent < size - 1)
-            {
-                if (sent < blocks)
-                {
-                    int offset = sent * BLOCK_SIZE;
-                    MPI_Send(&offset, 1, MPI_INT, sent + 1, BLOCK_START_TAG, MPI_COMM_WORLD);
-                    sent++;
-                }
-                else
-                {
-                    int _ = 0;
-                    MPI_Send(&_, 1, MPI_INT, sent + 1, END_TAG, MPI_COMM_WORLD);
-                }
-            }
-            while (processed < blocks)
-            {
-                MPI_Status status;
-                int offset;
-                MPI_Recv(&offset, 1, MPI_INT, MPI_ANY_SOURCE, SYNC_TAG, MPI_COMM_WORLD, &status);
-                int worker = status.MPI_SOURCE;
-                processed++;
-                if (sent < blocks)
-                {
-                    offset = sent * BLOCK_SIZE;
-                    MPI_Send(&offset, 1, MPI_INT, worker, BLOCK_START_TAG, MPI_COMM_WORLD);
-                    sent++;
-                }
-                else
-                {
-                    MPI_Send(&offset, 1, MPI_INT, worker, RESULT_TAG, MPI_COMM_WORLD);
-                }
-            }
-
             vir = 0.0;
             epot = 0.0;
-            MPI_Reduce(MPI_IN_PLACE, &vir, 1, MPI_DOUBLE, MPI_SUM, MASTER, MPI_COMM_WORLD);
-            MPI_Reduce(MPI_IN_PLACE, &epot, 1, MPI_DOUBLE, MPI_SUM, MASTER, MPI_COMM_WORLD);
-            MPI_Reduce(MPI_IN_PLACE, f, NPART * 3, MPI_DOUBLE, MPI_SUM, MASTER, MPI_COMM_WORLD);
+            if (size == 1)
+            {
+                forces(0, NPART, NPART, x, f, side, rcoff);
+            }
+            else
+            {
+                int sent = 0;
+                int processed = 0;
+                int blocks = NPART / BLOCK_SIZE;
+                for (int i = 0; i < size - 1; ++i)
+                    MPI_Send(&sent, 1, MPI_INT, i + 1, SYNC_TAG, MPI_COMM_WORLD);
+                MPI_Bcast(x, NPART * 3, MPI_DOUBLE, MASTER, MPI_COMM_WORLD);
+                while (sent < size - 1)
+                {
+                    if (sent < blocks)
+                    {
+                        int offset = sent * BLOCK_SIZE;
+                        MPI_Send(&offset, 1, MPI_INT, sent + 1, BLOCK_START_TAG, MPI_COMM_WORLD);
+                        sent++;
+                    }
+                    else
+                    {
+                        int _ = 0;
+                        MPI_Send(&_, 1, MPI_INT, sent + 1, END_TAG, MPI_COMM_WORLD);
+                    }
+                }
+                while (processed < blocks)
+                {
+                    MPI_Status status;
+                    int offset;
+                    MPI_Recv(&offset, 1, MPI_INT, MPI_ANY_SOURCE, SYNC_TAG, MPI_COMM_WORLD, &status);
+                    int worker = status.MPI_SOURCE;
+                    processed++;
+                    if (sent < blocks)
+                    {
+                        offset = sent * BLOCK_SIZE;
+                        MPI_Send(&offset, 1, MPI_INT, worker, BLOCK_START_TAG, MPI_COMM_WORLD);
+                        sent++;
+                    }
+                    else
+                    {
+                        MPI_Send(&offset, 1, MPI_INT, worker, RESULT_TAG, MPI_COMM_WORLD);
+                    }
+                }
+
+                MPI_Reduce(MPI_IN_PLACE, &vir, 1, MPI_DOUBLE, MPI_SUM, MASTER, MPI_COMM_WORLD);
+                MPI_Reduce(MPI_IN_PLACE, &epot, 1, MPI_DOUBLE, MPI_SUM, MASTER, MPI_COMM_WORLD);
+                MPI_Reduce(MPI_IN_PLACE, f, NPART * 3, MPI_DOUBLE, MPI_SUM, MASTER, MPI_COMM_WORLD);
+            }
 
             // Scale forces, complete update of velocities and compute k.e.
             double ekin = mkekin(NPART, f, vh, hsq2, hsq);
@@ -374,7 +381,7 @@ int main(int argc, char **argv)
             MPI_Recv(&offset, 1, MPI_INT, MASTER, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
             if (status.MPI_TAG == BLOCK_START_TAG)
             {
-                forces(offset, NPART, x, f, side, rcoff);
+                forces(offset, BLOCK_SIZE, NPART, x, f, side, rcoff);
                 MPI_Send(&offset, 1, MPI_INT, MASTER, SYNC_TAG, MPI_COMM_WORLD);
             }
             else if (status.MPI_TAG == SYNC_TAG)

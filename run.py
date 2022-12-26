@@ -74,7 +74,7 @@ TESTS = {
         'x': lambda result: [int(result[-1][0])],
         'y': lambda result, seq_result: [max(float(seq_result[-1][1]), 0.0000001) / max(float(result[-1][1]), 0.0000001)],
         'same': lambda result1, result2: [float(row[1]) for row in result1[:-1]] == [float(row[1]) for row in result2[:-1]],
-        'threads': [2, 4]
+        'threads': [1, 4]
     }
 }
 
