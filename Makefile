@@ -3,6 +3,7 @@ SOURCE_DIR = src
 
 OMPCC = gcc -fopenmp
 MPICC = mpicc
+NVCC = nvcc
 
 CC_FLAGS = -O3
 CC_FLAGS += -Wall -Wextra
@@ -13,7 +14,8 @@ CC_FLAGS += -DDEBUG
 endif
 
 all: $(BUILD_DIR)/prime $(BUILD_DIR)/feynman $(BUILD_DIR)/moldyn \
-$(BUILD_DIR)/prime-mpi $(BUILD_DIR)/feynman-mpi $(BUILD_DIR)/moldyn-mpi $(BUILD_DIR)/moldyn-mw-mpi
+$(BUILD_DIR)/prime-mpi $(BUILD_DIR)/feynman-mpi $(BUILD_DIR)/moldyn-mpi $(BUILD_DIR)/moldyn-mw-mpi \
+$(BUILD_DIR)/prime-cuda
 
 $(BUILD_DIR)/prime: $(SOURCE_DIR)/dz1z1.c $(SOURCE_DIR)/util.c | $(BUILD_DIR)
 	$(OMPCC) $(CC_FLAGS) $(^) -o $(@) $(LIBS)
@@ -35,6 +37,9 @@ $(BUILD_DIR)/moldyn-mpi: $(SOURCE_DIR)/dz2z3.c $(SOURCE_DIR)/util.c | $(BUILD_DI
 
 $(BUILD_DIR)/moldyn-mw-mpi: $(SOURCE_DIR)/dz2z4.c $(SOURCE_DIR)/util.c | $(BUILD_DIR)
 	$(MPICC) $(CC_FLAGS) $(^) -o $(@) $(LIBS)
+
+$(BUILD_DIR)/prime-cuda: $(SOURCE_DIR)/dz4z1.cu $(SOURCE_DIR)/util.c | $(BUILD_DIR)
+	$(NVCC)  $(^) -o $(@) $(LIBS)
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
