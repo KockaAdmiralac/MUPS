@@ -7,6 +7,10 @@
 
 int prime_number(int n)
 {
+    if (n == 1)
+    {
+        return 0;
+    }
     int total = 0;
     int size;
     int rank;

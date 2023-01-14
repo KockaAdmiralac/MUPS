@@ -131,7 +131,8 @@ double feynman(const int N)
     int mpi_n_inside = 0;
     MPI_Reduce(&err, &mpi_err, 1, MPI_DOUBLE, MPI_SUM, MASTER, MPI_COMM_WORLD);
     MPI_Reduce(&n_inside, &mpi_n_inside, 1, MPI_INT, MPI_SUM, MASTER, MPI_COMM_WORLD);
-    if (rank == MASTER) {
+    if (rank == MASTER)
+    {
         return sqrt(mpi_err / (double)(mpi_n_inside));
     }
     return 0.0;
