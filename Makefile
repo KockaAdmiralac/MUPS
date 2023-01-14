@@ -7,6 +7,7 @@ NVCC = nvcc
 
 CC_FLAGS = -O3
 CC_FLAGS += -Wall -Wextra
+NVCC_FLAGS = -O3
 LIBS = -lm
 
 ifeq ($(DEBUG), 1)
@@ -39,7 +40,7 @@ $(BUILD_DIR)/moldyn-mw-mpi: $(SOURCE_DIR)/dz2z4.c $(SOURCE_DIR)/util.c | $(BUILD
 	$(MPICC) $(CC_FLAGS) $(^) -o $(@) $(LIBS)
 
 $(BUILD_DIR)/prime-cuda: $(SOURCE_DIR)/dz4z1.cu $(SOURCE_DIR)/util.c | $(BUILD_DIR)
-	$(NVCC) $(CC_FLAGS) $(^) -o $(@) $(LIBS)
+	$(NVCC) $(NVCC_FLAGS) $(^) -o $(@) $(LIBS)
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
