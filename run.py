@@ -108,6 +108,7 @@ def run_test(func_num: int, test_type: str, exe_name: str, args: List[int], num_
         if num_threads == 1:
             process_env['OMP_NUM_THREADS'] = '1'
             exe_path = exe_path.replace('-cuda', '')
+            stringified_args = ['0'] + stringified_args
         process_args = [exe_path]
     else:
         raise BaseException('Unknown test type.')
