@@ -95,6 +95,13 @@ TESTS = {
         'y': lambda result, seq_result: [max(float(seq_result[0][2]), 0.0000001) / max(float(result[0][2]), 0.0000001)],
         'same': lambda result1, result2: (abs(float(result1[0][1]) - float(result2[0][1])) <= 0.01),
         'threads': [1, 2]
+    },
+    'moldyn-cuda': {
+        'type': 'cuda',
+        'x': lambda result: [int(result[-1][0])],
+        'y': lambda result, seq_result: [max(float(seq_result[-1][1]), 0.0000001) / max(float(result[-1][1]), 0.0000001)],
+        'same': lambda result1, result2: [float(row[1]) for row in result1[:-1]] == [float(row[1]) for row in result2[:-1]],
+        'threads': [1, 2]
     }
 }
 

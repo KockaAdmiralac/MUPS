@@ -16,7 +16,7 @@ endif
 
 all: $(BUILD_DIR)/prime $(BUILD_DIR)/feynman $(BUILD_DIR)/moldyn \
 $(BUILD_DIR)/prime-mpi $(BUILD_DIR)/feynman-mpi $(BUILD_DIR)/moldyn-mpi $(BUILD_DIR)/moldyn-mw-mpi \
-$(BUILD_DIR)/prime-cuda $(BUILD_DIR)/feynman-cuda
+$(BUILD_DIR)/prime-cuda $(BUILD_DIR)/feynman-cuda $(BUILD_DIR)/moldyn-cuda
 
 $(BUILD_DIR)/prime: $(SOURCE_DIR)/dz1z1.c $(SOURCE_DIR)/util.c | $(BUILD_DIR)
 	$(OMPCC) $(CC_FLAGS) $(^) -o $(@) $(LIBS)
@@ -43,6 +43,9 @@ $(BUILD_DIR)/prime-cuda: $(SOURCE_DIR)/dz4z1.cu $(SOURCE_DIR)/util.c | $(BUILD_D
 	$(NVCC) $(NVCC_FLAGS) $(^) -o $(@) $(LIBS)
 
 $(BUILD_DIR)/feynman-cuda: $(SOURCE_DIR)/dz4z2.cu $(SOURCE_DIR)/util.c | $(BUILD_DIR)
+	$(NVCC) $(NVCC_FLAGS) $(^) -o $(@) $(LIBS)
+
+$(BUILD_DIR)/moldyn-cuda: $(SOURCE_DIR)/dz4z3.cu $(SOURCE_DIR)/util.c | $(BUILD_DIR)
 	$(NVCC) $(NVCC_FLAGS) $(^) -o $(@) $(LIBS)
 
 $(BUILD_DIR):
