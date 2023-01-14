@@ -75,6 +75,18 @@ TESTS = {
         'y': lambda result, seq_result: [max(float(seq_result[-1][1]), 0.0000001) / max(float(result[-1][1]), 0.0000001)],
         'same': lambda result1, result2: [float(row[1]) for row in result1[:-1]] == [float(row[1]) for row in result2[:-1]],
         'threads': [1, 4]
+    },
+    'prime-cuda': {
+        'type': 'cuda',
+        'args': [
+            [1, 131072, 2],
+            [5, 500000, 10],
+            [1, 65536, 4]
+        ],
+        'x': lambda result: [int(row[0]) for row in result],
+        'y': lambda result, seq_result: [max(float(seq_result[idx][2]), 0.0000001) / max(float(row[2]), 0.0000001) for idx, row in enumerate(result)],
+        'same': lambda result1, result2: [int(row[1]) for row in result1] == [int(row[1]) for row in result2],
+        'threads': [1, 2]
     }
 }
 
@@ -90,6 +102,13 @@ def run_test(func_num: int, test_type: str, exe_name: str, args: List[int], num_
     elif test_type == 'mpi':
         process_args = ['mpiexec', '-np', str(num_threads), f'{BUILD_DIR}/{exe_name}']
         log_filename = f'{exe_name} {" ".join(stringified_args)} {num_threads}'
+    elif test_type == 'cuda':
+        exe_path = f'{BUILD_DIR}/{exe_name}'
+        log_filename = ' '.join([exe_path] + stringified_args + [str(num_threads)])
+        if num_threads == 1:
+            process_env['OMP_NUM_THREADS'] = '1'
+            exe_path = exe_path.replace('-cuda', '')
+        process_args = [exe_path]
     else:
         raise BaseException('Unknown test type.')
     process_args += stringified_args

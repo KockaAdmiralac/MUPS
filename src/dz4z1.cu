@@ -5,43 +5,11 @@
 #include <cuda_runtime.h>
 #include "util.h"
 
-// __global__ void primes_kernel(unsigned int *results, int n_high)
-// {
-//     extern __shared__ int sdata[];
-//     sdata[threadIdx.x] = 0;
-//     for (int i = 3 + (blockIdx.x * blockDim.x + threadIdx.x) * 2; i <= n_high; i += blockDim.x * gridDim.x)
-//     {
-//         int prime = 1;
-//         for (int j = 3; j < i; j += 2)
-//         {
-//             if (i % j == 0)
-//             {
-//                 prime = 0;
-//                 break;
-//             }
-//         }
-//         if (prime)
-//         {
-//             sdata[threadIdx.x]++;
-//         }
-//     }
-//     __syncthreads();
-//     if (threadIdx.x == 0)
-//     {
-//         unsigned primes = 0;
-//         for (unsigned i = 0; i < blockDim.x; i++)
-//         {
-//             primes += sdata[i];
-//         }
-//         results[blockIdx.x] = primes;
-//     }
-// }
-
 __global__ void primes_kernel(unsigned int *results, int n_high)
 {
-    extern __shared__ int sdata[];
+    __shared__ int sdata[NUM_OF_GPU_THREADS];
     sdata[threadIdx.x] = 0;
-    for (int i = 3 + threadIdx.x * 2; i <= n_high; i += blockDim.x * gridDim.x)
+    for (int i = 3 + (blockIdx.x * blockDim.x + threadIdx.x) * 2; i <= n_high; i += blockDim.x * gridDim.x * 2)
     {
         int prime = 1;
         for (int j = 3; j < i; j += 2)
@@ -86,9 +54,8 @@ void test(int n_lo, int n_hi, int n_factor)
         unsigned *gpuResults;
         cudaMalloc(&gpuResults, blocks * sizeof(int));
         unsigned *results = (unsigned *)malloc(blocks * sizeof(int));
-        printf("blocks: %d --", blocks);
 
-        primes_kernel<<<blocks, NUM_OF_GPU_THREADS, NUM_OF_GPU_THREADS * sizeof(int)>>>(gpuResults, n);
+        primes_kernel<<<blocks, NUM_OF_GPU_THREADS>>>(gpuResults, n);
 
         cudaMemcpy(results, gpuResults, blocks * sizeof(int), cudaMemcpyDeviceToHost);
         cudaFree(gpuResults);
@@ -97,7 +64,6 @@ void test(int n_lo, int n_hi, int n_factor)
             primes++;
         for (unsigned i = 0; i < blocks; i++)
         {
-            printf("%d ", results[i]);
             primes += results[i];
         }
 

@@ -39,7 +39,7 @@ $(BUILD_DIR)/moldyn-mw-mpi: $(SOURCE_DIR)/dz2z4.c $(SOURCE_DIR)/util.c | $(BUILD
 	$(MPICC) $(CC_FLAGS) $(^) -o $(@) $(LIBS)
 
 $(BUILD_DIR)/prime-cuda: $(SOURCE_DIR)/dz4z1.cu $(SOURCE_DIR)/util.c | $(BUILD_DIR)
-	$(NVCC)  $(^) -o $(@) $(LIBS)
+	$(NVCC) $(CC_FLAGS) $(^) -o $(@) $(LIBS)
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
