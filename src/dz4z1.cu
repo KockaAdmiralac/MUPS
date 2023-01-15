@@ -9,7 +9,8 @@ __global__ void primes_kernel(unsigned int *results, int n_high)
 {
     __shared__ int sdata[NUM_OF_GPU_THREADS];
     sdata[threadIdx.x] = 0;
-    for (int i = 3 + (blockIdx.x * blockDim.x + threadIdx.x) * 2; i <= n_high; i += blockDim.x * gridDim.x * 2)
+    int i = 3 + (blockIdx.x * blockDim.x + threadIdx.x) * 2;
+    if (i <= n_high)
     {
         int prime = 1;
         for (int j = 3; j < i; j += 2)
@@ -17,21 +18,20 @@ __global__ void primes_kernel(unsigned int *results, int n_high)
             if (i % j == 0)
             {
                 prime = 0;
-                break;
             }
         }
-        sdata[threadIdx.x] += prime;
+        sdata[threadIdx.x] = prime;
     }
     __syncthreads();
-    if (threadIdx.x == 0)
+    for (unsigned i = blockDim.x >> 1; i > 0; i >>= 1)
     {
-        unsigned primes = 0;
-        for (unsigned i = 0; i < blockDim.x; i++)
+        if (threadIdx.x < i)
         {
-            primes += sdata[i];
+            sdata[threadIdx.x] += sdata[threadIdx.x + i];
         }
-        results[blockIdx.x] = primes;
+        __syncthreads();
     }
+    results[blockIdx.x] = sdata[0];
 }
 
 void test(int n_lo, int n_hi, int n_factor)
@@ -49,7 +49,7 @@ void test(int n_lo, int n_hi, int n_factor)
 
         int primes = 0;
 
-        unsigned blocks = (n / 2) / NUM_OF_GPU_THREADS + ((n / 2) % NUM_OF_GPU_THREADS != 0);
+        unsigned blocks = (n / 2) / NUM_OF_GPU_THREADS + (((n / 2) % NUM_OF_GPU_THREADS) != 0);
 
         unsigned *gpuResults;
         cudaMalloc(&gpuResults, blocks * sizeof(int));
