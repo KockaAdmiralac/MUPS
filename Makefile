@@ -7,7 +7,7 @@ NVCC = nvcc
 
 CC_FLAGS = -O3
 CC_FLAGS += -Wall -Wextra
-NVCC_FLAGS = -O3
+NVCC_FLAGS = -O3 -arch=sm_61
 LIBS = -lm
 
 ifeq ($(DEBUG), 1)
