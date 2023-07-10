@@ -16,6 +16,11 @@ All homework tasks are in Serbian.
 
 ## Structure
 - `run.py` is our test runner that plots our speedup graphs and logs the output
-- `commit.sh` is a script that auto-commits to our SVN repositories (the homework had to go through SVN for some reason)
+- `commit.sh` is a script that auto-commits to our SVN repositories (the homework had to go through SVN for some reason). For that, it needed the following environment variables:
+    - `SSH_HOST`: Host to connect to through SSH
+    - `SSH_PORT`: SSH port
+    - `SSH_USERNAME`: Username to use when connecting through SSH
+    - `SSH_KEY`: SSH password
+    - `REPO_LOCATION`: Our Git repository location
 - `Makefile` builds all tasks for us
 - `src` contains homework files named as `dzXzY.c[u]`, where X is the homework task number and Y is the subtask number
